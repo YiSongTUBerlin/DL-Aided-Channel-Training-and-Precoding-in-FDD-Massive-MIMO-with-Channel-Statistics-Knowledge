@@ -61,7 +61,8 @@ def arg_generate():
 
 def generate_batch_data(size, F_dl, M,K,L_min, L_max, LSF_UE, Mainlobe_UE, HalfBW_UE, theta_max,  N_ul, h_num=0):
     x_act = np.complex64(np.zeros((size, h_num, M, K))) # F^{\herm} @ h
-    Sigma = np.complex64(np.zeros((size, h_num, M, M, K)))
+    Sigma = np.complex64(np.zeros((size, h_num, M, K)))
+    x_cov = np.complex64(np.zeros((size, h_num, M, M, K)))
     from0toM = np.float32(np.arange(0, M, 1))
     for size_idx in range(size):
         for kk in range(K):
@@ -80,9 +81,10 @@ def generate_batch_data(size, F_dl, M,K,L_min, L_max, LSF_UE, Mainlobe_UE, HalfB
             x_act[size_idx, :, :, kk] = h_dl @ F_dl.conj()
 
             Sigma_dl = np.transpose(response_temp_DL) @ np.diag(gamma_input) @ np.conjugate(response_temp_DL)
-            Sigma[size_idx, :, :, :, kk] = np.tile(F_dl.conj().T @Sigma_dl @ F_dl, (h_num, 1, 1))
+            x_cov[size_idx, :, :, :, kk] = np.tile(F_dl.conj().T @Sigma_dl @ F_dl, (h_num, 1, 1))
+            Sigma[size_idx, :, :, kk] =  np.tile(Sigma_dl[:, 0], (h_num, 1))
 
-    return x_act, Sigma
+    return x_act, x_cov, Sigma
 
 
 class data_generation(Dataset):
@@ -117,7 +119,8 @@ class data_generation(Dataset):
             self.h_act_test = data['x'][:self.test_size, :, :, :]
             self.hR_act_test = np.real(self.h_act_test)
             self.hI_act_test = np.imag(self.h_act_test)
-            self.Sigma = data['x_cov_from_dl_Sigma'][:self.test_size, :, :, :, :]
+            self.x_cov = data['x_cov_from_dl_Sigma'][:self.test_size, :, :, :, :]
+            self.Sigma =  data['Sigma_dl'][:self.test_size, :, :, 0, :]
             self.num_entries = self.h_act_test.shape[0]
         else:
             if train:
@@ -130,13 +133,14 @@ class data_generation(Dataset):
                 self.h_act_test = data['x'][:self.val_size, :, :, :]
                 self.hR_act_test = np.real(self.h_act_test)
                 self.hI_act_test = np.imag(self.h_act_test)
-                self.Sigma = data['x_cov_from_dl_Sigma'][:self.val_size, :, :, :, :]
+                self.x_cov = data['x_cov_from_dl_Sigma'][:self.val_size, :, :, :, :]
+                self.Sigma = data['Sigma_dl'][:self.val_size, :, :, 0, :]
                 self.num_entries = self.h_act_test.shape[0]
 
 
     def __getitem__(self, index):
         if self.train:
-            x_act, sigma = generate_batch_data(1, self.F_dl, self.M, self.K,
+            x_act, x_cov, sigma = generate_batch_data(1, self.F_dl, self.M, self.K,
                                                self.Lp_min, self.Lp_max,
                                                self.LSF_UE, self.Mainlobe_UE, self.HalfBW_UE, self.theta_max,
                                                self.sample_num,
@@ -144,10 +148,11 @@ class data_generation(Dataset):
             self.hR_act_test = np.real(x_act)
             self.hI_act_test = np.imag(x_act)
             self.Sigma = sigma
+            self.x_cov = x_cov
             self.num_entries = self.val_size
-            return self.hR_act_test[0, :, :, :], self.hI_act_test[0, :,  :, :], self.Sigma[0, :, :, :, :]
+            return self.hR_act_test[0, :, :, :], self.hI_act_test[0, :,  :, :], self.x_cov[0, :, :, :, :], self.Sigma[0, :, :, :]
         else:
-            return self.hR_act_test[index, :, :, :], self.hI_act_test[index, :,  :, :], self.Sigma[index, :, :, :, :]
+            return self.hR_act_test[index, :, :, :], self.hI_act_test[index, :,  :, :], self.x_cov[index, :, :, :, :], self.Sigma[index, :, :, :]
 
     def __len__(self):
         return self.num_entries

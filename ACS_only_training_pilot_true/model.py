@@ -49,7 +49,7 @@ class model(LightningModule):
         self.register_buffer("Psi_mat", Psi)
 
         self.pilot_matrix_FNN = nn.Sequential(
-            nn.Linear(self.M * self.K, 1024),
+            nn.Linear(self.M * self.K*2, 1024),
             nn.ReLU(inplace=True),
             nn.BatchNorm1d(1024),
 
@@ -63,12 +63,10 @@ class model(LightningModule):
 
 
     ## downlink training
-    def rate_optimization(self, hR, hI, x_cov, anneal_rate, plot=False):
+    def rate_optimization(self, hR, hI, x_cov, sigma, anneal_rate, plot=False):
         # start_time = time.time()
-        # sigma_matrix = gaussian_vec.reshape(gaussian_vec.shape[0], -1)
-        sigma = x_cov[:, np.arange(self.M), np.arange(self.M), :]
         sigma = sigma.view(-1, self.M * self.K)
-        sigma_matrix = torch.real(sigma)
+        sigma_matrix = torch.cat((torch.real(sigma), torch.imag(sigma)), dim=-1)
         Lambda_output = self.pilot_matrix_FNN(sigma_matrix)  # FNN network
         Lambda_output = 1/2*(Lambda_output + 1)
 
@@ -166,7 +164,7 @@ class model(LightningModule):
         return rate
 
 
-    def forward(self, hR, hI, x_cov, train, test=False):
+    def forward(self, hR, hI, x_cov, sigma, train, test=False):
         if train:
             anneal_rate = self.anneal_train
         else:
@@ -175,46 +173,48 @@ class model(LightningModule):
             plot= True
         else:
             plot = False
-        rate = self.rate_optimization(hR, hI, x_cov, anneal_rate, plot)
+        rate = self.rate_optimization(hR, hI, x_cov, sigma, anneal_rate, plot)
         return rate
 
     def training_step(self, batch, batch_idx):
-        hR, hI, x_cov= batch
+        hR, hI, x_cov, sigma = batch
         hR = hR.float()
         hI = hI.float()
 
         hR = hR.view(-1, self.M, self.K)
         hI = hI.view(-1, self.M, self.K)
         x_cov = x_cov.view(-1, self.M, self.M, self.K)
+        sigma = sigma.view(-1, self.M,  self.K)
 
-
-        rate = self(hR, hI, x_cov,  train=True)
+        rate = self(hR, hI, x_cov, sigma, train=True)
         self.log('train_loss', -rate, on_step=False, on_epoch=True, prog_bar=True)
         return -rate
 
     def validation_step(self, batch, batch_idx):
-        hR, hI, x_cov = batch
+        hR, hI, x_cov, sigma = batch
         hR = hR.float()
         hI = hI.float()
 
         hR = hR.view(-1, self.M, self.K)
         hI = hI.view(-1, self.M, self.K)
         x_cov = x_cov.view(-1, self.M, self.M, self.K)
+        sigma = sigma.view(-1, self.M,  self.K)
 
-        rate = self(hR, hI, x_cov, train=True)
+        rate = self(hR, hI, x_cov, sigma, train=True)
         self.log('val_loss', -rate, on_step=False, on_epoch=True, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         self.batch_idx = batch_idx
-        hR, hI, x_cov = batch
+        hR, hI, x_cov, sigma = batch
         hR = hR.float()
         hI = hI.float()
 
         hR = hR.view(-1, self.M, self.K)
         hI = hI.view(-1, self.M, self.K)
         x_cov = x_cov.view(-1, self.M, self.M, self.K)
+        sigma = sigma.view(-1, self.M,  self.K)
 
-        rate = self(hR, hI, x_cov, train=True, test=True)
+        rate = self(hR, hI, x_cov, sigma, train=False, test=True)
         self.log('test_rate', rate, on_step=False, on_epoch=True, prog_bar=True)
         return rate * hR.shape[0]
 
