@@ -1,4 +1,4 @@
-# Deep-Learning-Aided-Rate-Optimization-in-FDD-Massive-MIMO-with-Channel-Statistics-Knowledge
+# Deep-Learning-Aided-Channel-Training-and-Precoding-in-FDD-Massive-MIMO-with-Channel-Statistics-Knowledge
 
 This is the code for the paper titled "Deep-Learning Aided Rate Optimization in FDD Massive MIMO with Channel Statistics Knowledge", which can be found on the following link：
 
